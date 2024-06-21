@@ -1,10 +1,39 @@
 #include "server.hpp"
 #include "ollama_client.hpp"
+#include "config.hpp"
 
 using namespace httplib;
 
-#define ROUTER_POST(uri, handler) webSrv->Options(uri, [&](const Request& req, Response& res) {this->handleOptions(req,res);}); \
-            webSrv->Post(uri, [&](const Request& req, Response& res) {handler(req,res);});
+#define ROUTER_POST(uri, handler) m_webSrv->Options(uri, [&](const Request& req, Response& res) {this->handleOptions(req,res);}); \
+            m_webSrv->Post(uri, [&](const Request& req, Response& res) {handler(req,res);});
+
+#define DEFAULT_MODEL "llama3:latest"
+//#define OLLAMA_URL "http://127.0.0.1:11434"
+
+static std::string ollama_url_chat = {};
+static std::string ollama_url_image = {};
+static std::string ollama_url_embed = {};
+
+std::shared_ptr<ollama_client> server::getClientInstance(const std::string &token)
+{
+    std::lock_guard<std::mutex> lock(this->m_ollamasMapMutex);
+
+    auto it = this->m_ollamasMap.find(token);
+    if (it == this->m_ollamasMap.end()) 
+    {
+        LOG("creating new ollama client");
+        auto newOllama = std::make_shared<ollama_client>(ollama_url_chat, ollama_url_image, ollama_url_embed);
+        this->m_ollamasMap[token] = newOllama;
+        newOllama->accessed();
+        return newOllama;
+    } 
+    else 
+    {
+        LOG("reusing ollama client");
+        it->second->accessed();
+        return it->second;     
+    }
+}
 
 void server::handleOptions(const httplib::Request &req, httplib::Response &res)
 {
@@ -47,36 +76,13 @@ void server::handleSingleMessage(const httplib::Request &req, httplib::Response 
 
     if(db->auth(token))
     {
-        //res.set_content("Logged in", "text/plain");
-        std::lock_guard<std::mutex> lock(this->ollamasMapMutex);
+        auto chatHandler = getClientInstance(token);
 
-        auto handleSingle = [&](std::shared_ptr<ollama_client> chatHandler) 
-        {
-            printf("\n>> loading model llama2:7b");
-            while(!chatHandler->loadModel())
-            {
-                printf("\n>> loading model");
-            }
-            printf("\n>> model loaded");
-            auto response = chatHandler->processSingleMessage(reqText);
-            chatHandler->accessed();
+        auto response = chatHandler->processSingleMessage(reqText);
+        chatHandler->accessed();
 
-            res.set_content(response.c_str(), "text/plain");
-            res.status = 200;
-
-        };
-
-        auto it = this->ollamasMap.find(token);
-        if (it == this->ollamasMap.end()) {
-            printf("\n>> creating new ollama client");
-            auto newOllama = std::make_shared<ollama_client>("http://127.0.0.1:11434", "llama3:latest");
-            this->ollamasMap[token] = newOllama;
-            handleSingle(newOllama);
-        } else {
-            printf("\n>> reusing ollama client");
-            handleSingle(it->second);          
-        }
-        
+        res.set_content(response.c_str(), "text/plain");
+        res.status = 200;
     }
     else
     {
@@ -200,59 +206,46 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
         auto list = db->getChatIdsForUser(userID);
 
         auto it = std::find(list.begin(), list.end(), chatID);
-
-        if (it != list.end()) {
+        if (it != list.end()) 
+        {
             std::string response = {};
-            
-            auto handleAIConversation = [&](std::shared_ptr<ollama_client> chatHandler, std::vector<std::pair<std::string, bool>>& chatHistory) 
+            auto chatHandler = getClientInstance(token);
+            auto chatHistory = db->getChatMessages(chatID, userID);
+
+            if(json_data.contains("image") && json_data["image"].get<std::string>().length() > 0)
             {
-                chatHandler->accessed();
-                bool imageProcessing = false;
-                std::string imageB64 = {};
-                if(json_data.contains("image"))
-                {
-                    imageB64 = json_data["image"];
-                    imageProcessing = imageB64.length() > 0;
-                }
-                
-                if(json_data.contains("doc"))
-                {
-                    std::string docName = json_data["doc"];
-                    std::string vecData = db->getDoc(userID, docName);
-                    printf("\nprocessing embeded request\n");
-                    response = chatHandler->processChatMessageWithEmbed(incomingMessage, vecData, chatHistory);
-                }
-                else
-                {
-                    response = imageProcessing ? chatHandler->processChatMessageWithImage(incomingMessage, imageB64, chatHistory) : chatHandler->processChatMessage(incomingMessage, chatHistory);
-                }
-
-                res.set_content(response.c_str(), "text/plain");
-                res.status = 200;
-
-            };
-
+                //img2txt logic
+                std::string imageB64 = json_data["image"];
+                LOG("processing img2txt request");
+                response = chatHandler->processChatMessageWithImage(incomingMessage, imageB64);
+            }
+            else if(json_data.contains("doc"))
             {
-                std::lock_guard<std::mutex> lock(this->ollamasMapMutex);
-                auto it = this->ollamasMap.find(token);
-                if (it == this->ollamasMap.end()) {
-                    printf("\n>> creating new ollama client");
-                    auto newOllama = std::make_shared<ollama_client>("http://127.0.0.1:11434", "llama3:latest");
-                    this->ollamasMap[token] = newOllama;
-                }
+                //embed logic
+                std::string docName = json_data["doc"];
+                std::string vecData = db->getDoc(userID, docName);
+                LOG("processing embeded request");
+                response = chatHandler->processChatMessageWithEmbed(incomingMessage, vecData, chatHistory);
+            }
+            else
+            {
+                //txt2txt logic
+                LOG("processing txt2txt request");
+                response = chatHandler->processChatMessage(incomingMessage, chatHistory);
             }
 
-            auto msgsArray = db->getChatMessages(chatID, userID);
-            handleAIConversation(this->ollamasMap[token], msgsArray);
             db->storeMessage(chatID, userID, incomingMessage);
             db->storeMessage(chatID, 3, response);
 
-        } else {
-            printf("unauthorized chat access");
+            res.set_content(response.c_str(), "text/plain");
+            res.status = 200;
+        } 
+        else 
+        {
+            ERRLOG("unauthorized chat access");
             res.set_content("unauthorized access", "text/plain");
             res.status = 500;
         }
-
     }
     else
     {
@@ -286,7 +279,7 @@ void server::handleDeleteChat(const httplib::Request &req, httplib::Response &re
         } 
         else 
         {
-            printf("unauthorized chat access");
+            ERRLOG("unauthorized chat access");
             res.set_content("unauthorized access", "text/plain");
             res.status = 500;
         }
@@ -312,28 +305,19 @@ void server::handleCreateEmbed(const httplib::Request &req, httplib::Response &r
     if(db->auth(token))
     {
         int userID = db->userIDFromToken(token);
-
-        auto handleEmbed = [&](std::shared_ptr<ollama_client> chatHandler) 
+        auto chatHandler = getClientInstance(token);
+        auto docs = split(textData, '\n', 450);
+        std::vector<std::vector<float>> vecDocs = {};
+        for(auto& doc: docs)
         {
-            chatHandler->accessed();
-            //auto response = chatHandler->processNewEmbedding(textData);
-            db->saveDoc(userID, emName, textData);
-
-            res.set_content("", "text/plain");
-            res.status = 200;
-        };
-
-        auto it = this->ollamasMap.find(token);
-        if (it == this->ollamasMap.end()) {
-            printf("\n>> creating new ollama client");
-            auto newOllama = std::make_shared<ollama_client>("http://127.0.0.1:11434", "llama3:latest");
-            this->ollamasMap[token] = newOllama;
-            handleEmbed(newOllama);
-        } else {
-            printf("\n>> reusing ollama client");
-            handleEmbed(it->second);          
+            vecDocs.push_back(chatHandler->processNewEmbedding(doc));
         }
 
+        auto vecDB = m_ragHelper->createNewDoc(emName, vecDocs);
+
+        db->saveDoc(userID, emName, textData);
+        res.set_content("", "text/plain");
+        res.status = 200;
     }
     else
     {
@@ -367,6 +351,27 @@ void server::handleGetEmbeds(const httplib::Request &req, httplib::Response &res
     }
 }
 
+void server::handleGetModels(const httplib::Request &req, httplib::Response &res)
+{
+    std::string body = req.body;
+    json json_data = json::parse(body);
+    // printf("json_data: %s \n", json_data.dump().c_str());
+    std::string token = json_data["token"];
+    auto db = std::make_unique<pgdb>();
+    if(db->auth(token))
+    {
+        auto chatHandler = getClientInstance(token);
+        auto ret = chatHandler->processListModels();
+        res.set_content(ret, "text/plain");
+        res.status = 200;
+    }
+    else
+    {
+        res.set_content("Unknown token", "text/plain");
+        res.status = 404;
+    }
+}
+
 void server::handleChat(const httplib::Request &req, httplib::Response &res)
 {
     std::string body = req.body;
@@ -382,8 +387,8 @@ void server::handleChat(const httplib::Request &req, httplib::Response &res)
         auto list = db->getChatIdsForUser(userID);
 
         auto it = std::find(list.begin(), list.end(), chatID);
-
-        if (it != list.end()) {
+        if (it != list.end()) 
+        {
             auto msgsArray = db->getChatMessages(chatID, userID);
 
             json response_json = {};
@@ -391,8 +396,10 @@ void server::handleChat(const httplib::Request &req, httplib::Response &res)
 
             res.set_content(response_json.dump(), "text/plain");
             res.status = 200;
-        } else {
-            printf("unauthorized chat access");
+        } 
+        else 
+        {
+            ERRLOG("unauthorized chat access");
             res.set_content("unauthorized access", "text/plain");
             res.status = 500;
         }
@@ -405,10 +412,14 @@ void server::handleChat(const httplib::Request &req, httplib::Response &res)
     }
 }
 
-server::server(std::string address, int port) : webSrv(std::make_unique<httplib::Server>()), database(std::make_unique<pgdb>())
+server::server(std::string address, int port) : m_webSrv(std::make_unique<httplib::Server>()), m_database(std::make_unique<pgdb>()), m_ragHelper(std::make_unique<rag>())
 {
-    this->bindAddress = address;
-    this->listenPort = port;
+    m_bindAddress = address;
+    m_listenPort = port;
+
+    ollama_url_chat = g_config->getValue<std::string>("ollama.chat.base_url");
+    ollama_url_embed = g_config->getValue<std::string>("ollama.embed.base_url");
+    ollama_url_image = g_config->getValue<std::string>("ollama.image.base_url");
 
 }
 
@@ -429,12 +440,13 @@ void server::listen()
     ROUTER_POST("/deleteChat", this->handleDeleteChat);
     ROUTER_POST("/createEmbed", this->handleCreateEmbed);
     ROUTER_POST("/getEmbeds", this->handleGetEmbeds);
+    ROUTER_POST("/getModels", this->handleGetModels);
 
-    webSrv->set_default_headers({
+    m_webSrv->set_default_headers({
         { "Access-Control-Allow-Origin", "*" },
         { "Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS" },
         { "Access-Control-Allow-Headers", "Origin, Content-Type, X-Auth-Token" }
     });
 
-    webSrv->listen(this->bindAddress, this->listenPort);
+    m_webSrv->listen(m_bindAddress, m_listenPort);
 }

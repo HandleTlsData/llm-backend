@@ -10,12 +10,12 @@ private:
         not_found
     };
     std::unique_ptr<pqxx::connection> conn;
-    /* data */
 public:
     //dbdetails template: "dbname=DBNAME user=DBUSER password=DBPASSWD host=DBHOST port=DBPORT"
     pgdb(); 
     ~pgdb();
 
+public:
     std::string hashPassword(const std::string& username, const std::string& password);
 
     bool createUser(const std::string& username, const std::string& pwd);

@@ -1,4 +1,5 @@
 #include "ollama_client.hpp"
+#include "rag.hpp"
 
 //definition of ollama methods
 #define LIST_MODELS_URI "/api/tags"
@@ -16,11 +17,13 @@
 #define LOAD_MODEL_URI "/api/generate"
 #define LOAD_MODEL_METHOD "POST"
 
-ollama_client::ollama_client(std::string backendUrl, std::string modelName)
+ollama_client::ollama_client(const std::string &backendUrl, const std::string &imageBackendURL, const std::string &embedBackendURL)
 {
-    this->backURL = backendUrl;
-    this->model = modelName;
     this->accessed();
+    this->backURL = backendUrl;
+    this->model = "llama3:latest";
+    this->backURL_img = imageBackendURL;
+    this->backURL_emb = embedBackendURL;
 }
 
 ollama_client::~ollama_client()
@@ -58,10 +61,6 @@ std::string ollama_client::processSingleMessage(const std::string& requestMsg)
 {
     std::string responseText = {};
 
-    //unexpected
-    if(this->isProcessingResponse)
-        return {};
-
     this->lastRequestMessage = requestMsg;
     json requestBody = {
         {"model", this->model},
@@ -73,25 +72,17 @@ std::string ollama_client::processSingleMessage(const std::string& requestMsg)
     std::string targetURL = backURL + SIMPLE_COMPLETION_URI;
 
     //no streaming logic, full response returned in a single blocking request
-    this->isProcessingResponse = true;
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, SIMPLE_COMPLETION_METHOD);
     
     json responseBody = json::parse(responseEncoded);
     responseText = responseBody["response"];      
     this->lastResponseMessage = responseText;
-    this->isProcessingResponse = false;
     return responseText;
 }
 
 std::string ollama_client::processChatMessage(const std::string& requestMsg, const std::vector<std::pair<std::string, bool>>& chatHistory)
 {
     std::string responseText = {};
-
-    if(this->isProcessingResponse)
-    {
-        printf("\nstill processing response\n");
-        return {};
-    }
 
     this->lastRequestMessage = requestMsg;
     json requestBody = {
@@ -120,25 +111,18 @@ std::string ollama_client::processChatMessage(const std::string& requestMsg, con
     std::string targetURL = backURL + CHAT_COMPLETION_URI;
     
     //no streaming logic, full response returned in a single blocking request
-    this->isProcessingResponse = true;
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, CHAT_COMPLETION_METHOD);
+    LOG("received response: {}", responseEncoded);
     
     json responseBody = json::parse(responseEncoded);
     responseText = responseBody["message"]["content"];      
     this->lastResponseMessage = responseText;
-    this->isProcessingResponse = false;
     return responseText;
 }
 
-std::string ollama_client::processChatMessageWithImage(const std::string &requestMsg, const std::string &imageB64, const std::vector<std::pair<std::string, bool>> &chatHistory)
+std::string ollama_client::processChatMessageWithImage(const std::string &requestMsg, const std::string &imageB64)
 {
     std::string responseText = {};
-
-    if(this->isProcessingResponse)
-    {
-        printf("\nstill processing response\n");
-        return {};
-    }
 
     this->lastRequestMessage = requestMsg;
     json requestBody = {
@@ -149,13 +133,6 @@ std::string ollama_client::processChatMessageWithImage(const std::string &reques
 
     requestBody["messages"] = nlohmann::json::array();
 
-    for (const auto& [content, role] : chatHistory) {
-        nlohmann::json message;
-        message["content"] = content;
-        message["role"] = role ? "user" : "assistant";
-        requestBody["messages"].push_back(message);
-    }
-
     //process latest one
     {
         nlohmann::json message;
@@ -165,12 +142,11 @@ std::string ollama_client::processChatMessageWithImage(const std::string &reques
         requestBody["messages"].push_back(message);
     }
 
-    std::string targetURL = backURL + CHAT_COMPLETION_URI;
+    std::string targetURL = this->backURL_img + CHAT_COMPLETION_URI;
     
     //no streaming logic, full response returned in a single blocking request
-    this->isProcessingResponse = true;
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, CHAT_COMPLETION_METHOD);
-    this->isProcessingResponse = false;
+
     json responseBody = json::parse(responseEncoded);
     responseText = responseBody["message"]["content"];      
     this->lastResponseMessage = responseText;
@@ -181,15 +157,9 @@ std::string ollama_client::processChatMessageWithEmbed(const std::string &reques
 {
     std::string responseText = {};
 
-    if(this->isProcessingResponse)
-    {
-        printf("\nstill processing response\n");
-        return {};
-    }
-
     std::string prompt = "Using this data: ";
     prompt += embedData + ". Respond to this prompt: " + requestMsg;
-    printf("\nprompt:%s\n", prompt.c_str());
+    LOG("prompt: {}", prompt.c_str());
 
 
     this->lastRequestMessage = requestMsg;
@@ -203,7 +173,7 @@ std::string ollama_client::processChatMessageWithEmbed(const std::string &reques
 
     {
         nlohmann::json message;
-        message["content"] = "You are an assistant for answering questions.\nYou are given the extracted parts of a long document and a question. Provide a conversational answer.\nIf you don't know the answer, just say \"I do not know.\" Don't make up an answer.";
+        message["content"] = rag::getSystemMessage();
         message["role"] = "system";
         requestBody["messages"].push_back(message);
     }
@@ -222,44 +192,49 @@ std::string ollama_client::processChatMessageWithEmbed(const std::string &reques
         requestBody["messages"].push_back(message);
     }
 
-    std::string targetURL = backURL + CHAT_COMPLETION_URI;
+    std::string targetURL = this->backURL_emb + CHAT_COMPLETION_URI;
     
     //no streaming logic, full response returned in a single blocking request
-    this->isProcessingResponse = true;
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, CHAT_COMPLETION_METHOD);
     
     json responseBody = json::parse(responseEncoded);
     responseText = responseBody["message"]["content"];      
     this->lastResponseMessage = responseText;
-    this->isProcessingResponse = false;
     return responseText;
 }
 
-std::string ollama_client::processNewEmbedding(const std::string& embedding)
+
+std::vector<float> ollama_client::processNewEmbedding(const std::string& embedding)
 {
     std::string responseText = {};
 
-    //unexpected
-    if(this->isProcessingResponse)
-        return {};
-
     json requestBody = {
-        {"model", "snowflake-arctic-embed:latest"},
+        {"model", "mxbai-embed-large:latest"},
         {"prompt", embedding}
     };
 
-    std::string targetURL = backURL + GENERATE_EMBED_URI;
+    std::string targetURL = this->backURL_emb + GENERATE_EMBED_URI;
     
-    this->isProcessingResponse = true;
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, GENERATE_EMBED_METHOD);
-    this->isProcessingResponse = false;
 
     json responseBody = json::parse(responseEncoded);
-    ;
-    printf("\nresponse: %.50s\n", responseBody.dump(2).c_str());
-    //std::vector<float> vecArr = responseBody["embedding"];
-    if(!responseBody.contains("embedding"))
-        throw;
-    responseText = responseEncoded;//["embedding"];      
-    return responseText;
+    // printf("\nresponse: %.50s\n", responseBody.dump(2).c_str());
+    std::vector<float> newEmbs = responseBody["embedding"]; 
+    return newEmbs;
+}
+
+std::string ollama_client::processListModels()
+{
+    std::string targetURL = backURL + LIST_MODELS_URI;
+    std::string responseEncoded = makeHttpRequest(targetURL, {}, LIST_MODELS_METHOD);
+    json responseBody = json::parse(responseEncoded);
+    std::vector<nlohmann::json> models = responseBody["models"];
+    std::vector<std::string> modelNames = {};
+    for (const auto& model : models) 
+    {
+        modelNames.push_back(model["name"]);
+    }
+    json output;
+    output["models"] = modelNames;
+    return output.dump();
 }

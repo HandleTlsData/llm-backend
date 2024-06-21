@@ -3,3 +3,6 @@ build.sh
 config.json
 httplib.h
 json.hpp
+.vscode/settings.json
+Dockerfile
+spdlog*
