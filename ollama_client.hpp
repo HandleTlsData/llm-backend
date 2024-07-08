@@ -22,6 +22,8 @@ public:
     std::string processChatMessage(const std::string& requestMsg, const std::vector<std::pair<std::string, bool>>& chatHistory);
     std::string processChatMessageWithImage(const std::string& requestMsg, const std::string& imageB64);
     std::string processChatMessageWithEmbed(const std::string& requestMsg, const std::string& embedData, const std::vector<std::pair<std::string, bool>>& chatHistory);
+    std::string processMessageWithCommandHandler(const std::string& requestMsg);
+
     std::vector<float> processNewEmbedding(const std::string& embedding);
     std::string processListModels();
 };

@@ -1,5 +1,6 @@
 #include "ollama_client.hpp"
 #include "rag.hpp"
+#include "commands.hpp"
 
 //definition of ollama methods
 #define LIST_MODELS_URI "/api/tags"
@@ -203,6 +204,54 @@ std::string ollama_client::processChatMessageWithEmbed(const std::string &reques
     return responseText;
 }
 
+std::string ollama_client::processMessageWithCommandHandler(const std::string &requestMsg)
+{
+    std::string responseText = {};
+
+    this->lastRequestMessage = requestMsg;
+    json requestBody = {
+        {"model", this->model},
+        {"stream", this->supportStreaming},
+        {"keep_alive", "20m"}
+    };
+
+    requestBody["messages"] = nlohmann::json::array();
+    {
+        nlohmann::json message;
+        std::string systemMsg = "Tools: ";
+
+        for(const auto& x : g_cmd->listCommands())
+        {
+            systemMsg += "\"[" + x.first + "]argument[/" + x.first + "]\" " + x.second + ";";
+        }
+
+        systemMsg += "You're not a chat assistant, you're text-to-command translator. You need to transform text prompts into commands. Command is a tool's text format." 
+        "Only use the provided tools when the prompt explicitly requests information that the tool can provide, respond only with the relevant tool format (for example [TOOL]argument[/TOOL]). "
+        "Do not use tools for general mentions or discussions related to the tool's topic. Do not respond to prompts that don't require the use of these tools.";
+        
+        message["content"] = systemMsg;
+        message["role"] = "system";
+        requestBody["messages"].push_back(message);
+    }
+
+    {
+        nlohmann::json message;
+        message["content"] = requestMsg;
+        message["role"] = "user";
+        requestBody["messages"].push_back(message);
+    }
+
+        std::string targetURL = backURL + CHAT_COMPLETION_URI;
+    
+    //no streaming logic, full response returned in a single blocking request
+    std::string responseEncoded = makeHttpRequest(targetURL, requestBody, CHAT_COMPLETION_METHOD);
+    LOG("received response: {}", responseEncoded);
+    
+    json responseBody = json::parse(responseEncoded);
+    responseText = responseBody["message"]["content"];      
+    this->lastResponseMessage = responseText;
+    return responseText;
+}
 
 std::vector<float> ollama_client::processNewEmbedding(const std::string& embedding)
 {

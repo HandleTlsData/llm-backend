@@ -27,6 +27,9 @@ void appConfig::createConfigFile()
     config["ollama"]["image"]["base_url"] = "http://127.0.0.1:11434";
     config["ollama"]["embed"]["base_url"] = "http://127.0.0.1:11434";
 
+    config["comfy"]["base_url"] = "http://127.0.0.1:8188";
+    config["comfy"]["fs_location"] = "/home/comfy/";
+
     std::ofstream outfile(m_configFilename);
     outfile << std::setw(4) << config << std::endl;
 }

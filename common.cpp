@@ -26,7 +26,7 @@ std::string makeHttpRequest(const std::string &url, const json &requestBody, con
         res = curl_easy_perform(curl);
         if (res != CURLE_OK) 
         {
-            ERRLOG("curl_easy_perform() failed: {}", curl_easy_strerror(res));
+            ERRLOG("curl_easy_perform() failed: {} for URL: {}", curl_easy_strerror(res), url);
         }
 
         curl_easy_cleanup(curl);
@@ -66,6 +66,75 @@ std::string generateString(int length)
     }
 
     return randomString;
+}
+
+std::string urlEncode(const std::string &source)
+{
+    std::string response = {};
+    CURL* curl = curl_easy_init();
+    if (curl) 
+    {
+        char* encoded_city = curl_easy_escape(curl, source.c_str(), source.length());
+        if (!encoded_city) 
+        {
+            std::cerr << "Failed to encode city name" << std::endl;
+            curl_easy_cleanup(curl);
+            return response;
+        }
+        response = std::string(encoded_city);
+        return response;
+    }
+    return response;
+}
+
+std::string base64_encode(const std::vector<unsigned char> &data)
+{
+    static const char base64_chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+    std::string encoded;
+    int i = 0;
+    int j = 0;
+    unsigned char char_array_3[3];
+    unsigned char char_array_4[4];
+    int in_len = data.size();
+
+    while (in_len--) 
+    {
+        char_array_3[i++] = data[j++];
+        if (i == 3) 
+        {
+            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+            char_array_4[3] = char_array_3[2] & 0x3f;
+
+            for(i = 0; i < 4; i++)
+                encoded += base64_chars[char_array_4[i]];
+            i = 0;
+        }
+    }
+
+    if (i) 
+    {
+        for(j = i; j < 3; j++)
+            char_array_3[j] = '\0';
+
+        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+        char_array_4[3] = char_array_3[2] & 0x3f;
+
+        for (j = 0; j < i + 1; j++)
+            encoded += base64_chars[char_array_4[j]];
+
+        while(i++ < 3)
+            encoded += '=';
+    }
+
+    return encoded;
 }
 
 std::vector<std::string> split(const std::string& s, char delimiter) 

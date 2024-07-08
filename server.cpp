@@ -1,6 +1,7 @@
 #include "server.hpp"
 #include "ollama_client.hpp"
 #include "config.hpp"
+#include "commands.hpp"
 
 using namespace httplib;
 
@@ -10,10 +11,6 @@ using namespace httplib;
 #define DEFAULT_MODEL "llama3:latest"
 //#define OLLAMA_URL "http://127.0.0.1:11434"
 
-static std::string ollama_url_chat = {};
-static std::string ollama_url_image = {};
-static std::string ollama_url_embed = {};
-
 std::shared_ptr<ollama_client> server::getClientInstance(const std::string &token)
 {
     std::lock_guard<std::mutex> lock(this->m_ollamasMapMutex);
@@ -22,7 +19,7 @@ std::shared_ptr<ollama_client> server::getClientInstance(const std::string &toke
     if (it == this->m_ollamasMap.end()) 
     {
         LOG("creating new ollama client");
-        auto newOllama = std::make_shared<ollama_client>(ollama_url_chat, ollama_url_image, ollama_url_embed);
+        auto newOllama = std::make_shared<ollama_client>(m_urlChat, m_urlImage, m_urlEmbed);
         this->m_ollamasMap[token] = newOllama;
         newOllama->accessed();
         return newOllama;
@@ -229,9 +226,18 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
             }
             else
             {
-                //txt2txt logic
-                LOG("processing txt2txt request");
-                response = chatHandler->processChatMessage(incomingMessage, chatHistory);
+                LOG("processing regular request");
+                auto incomingCommand = chatHandler->processMessageWithCommandHandler(incomingMessage);
+                LOG("command: {}", incomingCommand);
+                auto commandResponse = g_cmd->executeCommand(incomingCommand);
+                if(commandResponse.length() > 0)
+                {
+                    response = commandResponse;
+                }
+                else
+                {
+                    response = chatHandler->processChatMessage(incomingMessage, chatHistory);
+                }
             }
 
             db->storeMessage(chatID, userID, incomingMessage);
@@ -417,9 +423,9 @@ server::server(std::string address, int port) : m_webSrv(std::make_unique<httpli
     m_bindAddress = address;
     m_listenPort = port;
 
-    ollama_url_chat = g_config->getValue<std::string>("ollama.chat.base_url");
-    ollama_url_embed = g_config->getValue<std::string>("ollama.embed.base_url");
-    ollama_url_image = g_config->getValue<std::string>("ollama.image.base_url");
+    m_urlChat = g_config->getValue<std::string>("ollama.chat.base_url");
+    m_urlEmbed = g_config->getValue<std::string>("ollama.embed.base_url");
+    m_urlImage = g_config->getValue<std::string>("ollama.image.base_url");
 
 }
 

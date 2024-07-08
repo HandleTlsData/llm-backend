@@ -14,6 +14,10 @@ private:
     std::unordered_map<std::string, std::shared_ptr<ollama_client>> m_ollamasMap;
     std::mutex m_ollamasMapMutex;
     std::unique_ptr<rag> m_ragHelper;
+
+    std::string m_urlChat;
+    std::string m_urlImage;
+    std::string m_urlEmbed;
 private:
     std::shared_ptr<ollama_client> getClientInstance(const std::string& token);
     std::string processImageToText(const std::string &incomingMessage, const std::string &imageBase64);
