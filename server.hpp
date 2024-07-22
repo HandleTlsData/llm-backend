@@ -26,9 +26,9 @@ private:
     void handleOptions(const httplib::Request &req, httplib::Response &res);
     void handleNewChat(const httplib::Request &req, httplib::Response &res);
     void handleSingleMessage(const httplib::Request &req, httplib::Response &res);
-    void handleFullChat(const httplib::Request &req, httplib::Response &res);
     void handleLogin(const httplib::Request &req, httplib::Response &res);
     void handleLoginToken(const httplib::Request &req, httplib::Response &res);
+    void handleGetUsername(const httplib::Request &req, httplib::Response &res);
     void handleChatLists(const httplib::Request &req, httplib::Response &res);
     void handleChat(const httplib::Request &req, httplib::Response &res);
     void handleChatMessage(const httplib::Request &req, httplib::Response &res);
@@ -36,6 +36,7 @@ private:
     void handleCreateEmbed(const httplib::Request &req, httplib::Response &res);
     void handleGetEmbeds(const httplib::Request &req, httplib::Response &res);
     void handleGetModels(const httplib::Request &req, httplib::Response &res);
+    void handleGeneratedImages(const httplib::Request &req, httplib::Response &res);
 
 public:
     server(std::string address, int port);
@@ -43,4 +44,9 @@ public:
 
     //blocking
     void listen();
+
+public:
+    static void setCookie(httplib::Response& res, const std::string& name, const std::string& value, 
+               int maxAge = 3600, bool httpOnly = false);
+    static std::string getCookie(const httplib::Request& req, const std::string& name);
 };

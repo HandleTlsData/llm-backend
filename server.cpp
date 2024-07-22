@@ -2,11 +2,14 @@
 #include "ollama_client.hpp"
 #include "config.hpp"
 #include "commands.hpp"
+#include "imagesrv.hpp"
 
 using namespace httplib;
 
 #define ROUTER_POST(uri, handler) m_webSrv->Options(uri, [&](const Request& req, Response& res) {this->handleOptions(req,res);}); \
             m_webSrv->Post(uri, [&](const Request& req, Response& res) {handler(req,res);});
+#define ROUTER_GET(uri, handler) m_webSrv->Options(uri, [&](const Request& req, Response& res) {this->handleOptions(req,res);}); \
+            m_webSrv->Get(uri, [&](const Request& req, Response& res) {handler(req,res);});
 
 #define DEFAULT_MODEL "llama3:latest"
 //#define OLLAMA_URL "http://127.0.0.1:11434"
@@ -88,35 +91,6 @@ void server::handleSingleMessage(const httplib::Request &req, httplib::Response 
     }
 }
 
-void server::handleFullChat(const httplib::Request & req, httplib::Response & res)
-{
-    std::string body = req.body;
-    json json_data = json::parse(body);
-    std::string token = json_data["token"];
-    std::string chatID = json_data["chatID"];
-    // printf("token: %s \n", token.c_str());
-    auto db = std::make_unique<pgdb>();
-
-    if(db->auth(token))
-    {
-        int userID = db->userIDFromToken(token);
-        if(userID > 0)
-        {
-            auto msgs = db->retrieveMessages(userID, std::stoi(chatID));
-        }
-        else
-        {            
-            res.set_content("", "text/plain");
-        }
-        res.status = 200;
-    }
-    else
-    {
-        res.set_content("Unknown token", "text/plain");
-        res.status = 404;
-    }
-}
-
 void server::handleLogin(const httplib::Request &req, httplib::Response &res)
 {
     std::string body = req.body;
@@ -130,6 +104,7 @@ void server::handleLogin(const httplib::Request &req, httplib::Response &res)
         std::string randomWords = generateString(10);
         std::string uniqueToken = hashString(randomWords);
         db->saveToken(username, uniqueToken);
+        server::setCookie(res, "token", uniqueToken);
         res.set_content(uniqueToken.c_str(), "text/plain");
         res.status = 200;
     }
@@ -151,6 +126,7 @@ void server::handleLoginToken(const httplib::Request &req, httplib::Response &re
     if(db->auth(token))
     {
         res.set_content("Logged in", "text/plain");
+        server::setCookie(res, "token", token);
         res.status = 200;
     }
     else
@@ -158,6 +134,19 @@ void server::handleLoginToken(const httplib::Request &req, httplib::Response &re
         res.set_content("Unknown token", "text/plain");
         res.status = 404;
     }
+}
+
+void server::handleGetUsername(const httplib::Request &req, httplib::Response &res)
+{
+    std::string body = req.body;
+    json json_data = json::parse(body);
+    std::string token = json_data["token"];
+    // printf("token: %s \n", token.c_str());
+    auto db = std::make_unique<pgdb>();
+
+    res.set_content(db->usernameFromToken(token), "text/plain");
+    res.status = 200;
+
 }
 
 void server::handleChatLists(const httplib::Request &req, httplib::Response &res)
@@ -174,7 +163,7 @@ void server::handleChatLists(const httplib::Request &req, httplib::Response &res
         auto list = db->getChatIdsForUser(userID);
 
         json response_json = {};
-        response_json["chatsArray"] = list;
+        response_json = list;
 
         res.set_content(response_json.dump(), "text/plain");
         res.status = 200;
@@ -206,6 +195,7 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
         if (it != list.end()) 
         {
             std::string response = {};
+            std::string filename = {};
             auto chatHandler = getClientInstance(token);
             auto chatHistory = db->getChatMessages(chatID, userID);
 
@@ -229,10 +219,46 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
                 LOG("processing regular request");
                 auto incomingCommand = chatHandler->processMessageWithCommandHandler(incomingMessage);
                 LOG("command: {}", incomingCommand);
-                auto commandResponse = g_cmd->executeCommand(incomingCommand);
-                if(commandResponse.length() > 0)
+                bool llmPostProcessing = false;
+                auto commandResponse = g_cmd->executeCommand(incomingCommand, llmPostProcessing);
+                if(commandResponse.first.length() > 0)
                 {
-                    response = commandResponse;
+                    if(llmPostProcessing)
+                    {
+                        std::string incomingMessageExt = "Tool: \"" + commandResponse.first + "\" responded: \"" + commandResponse.second +
+                                    "\". If it is relevant to the prompt, you can use this information in your answer. Prompt: " + incomingMessage; 
+                        response = chatHandler->processChatMessage(incomingMessageExt, chatHistory);
+                    }
+                    else
+                    {
+                        if(commandResponse.first == "GENIMG")
+                        {
+                            auto username = db->usernameFromToken(token);
+                            std::string generatedFilename = hashString( generateString(6) + currentTime("%d-%m-%Y %H-%M-%S") ) + ".png";
+                            std::string destinationPath = g_config->getValue<std::string>("comfy.fs_location") + "output/" + username + "/" + generatedFilename;
+                            std::string sourcePath = commandResponse.second;
+                            try 
+                            {
+                                std::filesystem::path destFs = destinationPath;
+                                std::filesystem::path sourceFs = sourcePath;
+                                std::filesystem::create_directories(destFs.parent_path());
+                                std::filesystem::rename(sourceFs, destFs);
+                                LOG("file moved to {}", destinationPath);
+                            } 
+                            catch (const std::filesystem::filesystem_error& e) 
+                            {
+                                ERRLOG("Error moving file: {}",  e.what());
+                                return;
+                            }
+
+                            filename = generatedFilename;
+                            
+                        }
+                        else
+                        {
+                            response = commandResponse.second;
+                        }
+                    }
                 }
                 else
                 {
@@ -240,10 +266,15 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
                 }
             }
 
-            db->storeMessage(chatID, userID, incomingMessage);
-            db->storeMessage(chatID, 3, response);
 
-            res.set_content(response.c_str(), "text/plain");
+            db->storeMessage(chatID, userID, incomingMessage);
+            db->storeMessage(chatID, 3, response, filename);
+            
+            json resJ;
+            resJ["text"] = response;
+            resJ["image"] = filename;
+
+            res.set_content(resJ.dump().c_str(), "text/plain");
             res.status = 200;
         } 
         else 
@@ -378,6 +409,11 @@ void server::handleGetModels(const httplib::Request &req, httplib::Response &res
     }
 }
 
+void server::handleGeneratedImages(const httplib::Request & req, httplib::Response & res)
+{
+    g_imagesrv->requestFile(req, res);
+}
+
 void server::handleChat(const httplib::Request &req, httplib::Response &res)
 {
     std::string body = req.body;
@@ -395,21 +431,24 @@ void server::handleChat(const httplib::Request &req, httplib::Response &res)
         auto it = std::find(list.begin(), list.end(), chatID);
         if (it != list.end()) 
         {
-            auto msgsArray = db->getChatMessages(chatID, userID);
-
+            auto msgsArray = db->getChatMessagesWithImgs(chatID, userID);
+            
             json response_json = {};
-            response_json["chatMessages"] = msgsArray;
-
+            response_json = json::array();
+            for(auto& x : msgsArray)
+            {
+                response_json.push_back({{"text", x.msg}, {"local", x.isLocal}, {"image", x.imgUri}});
+            }
+            
             res.set_content(response_json.dump(), "text/plain");
             res.status = 200;
         } 
         else 
         {
             ERRLOG("unauthorized chat access");
-            res.set_content("unauthorized access", "text/plain");
-            res.status = 500;
+            res.status = 401;
+            res.set_content("Unauthorized", "text/plain");
         }
-
     }
     else
     {
@@ -438,6 +477,7 @@ void server::listen()
     //for CORS we need to handle OPTIONS - return 200. Headers are set by default
     ROUTER_POST("/login", this->handleLogin);
     ROUTER_POST("/loginToken", this->handleLoginToken);
+    ROUTER_POST("/getUsername", this->handleGetUsername);
     ROUTER_POST("/createChat", this->handleNewChat);
     ROUTER_POST("/singleMessage", this->handleSingleMessage);
     ROUTER_POST("/getChats", this->handleChatLists);
@@ -448,6 +488,8 @@ void server::listen()
     ROUTER_POST("/getEmbeds", this->handleGetEmbeds);
     ROUTER_POST("/getModels", this->handleGetModels);
 
+    ROUTER_GET("/images/(.*)/(.*)", this->handleGeneratedImages);
+
     m_webSrv->set_default_headers({
         { "Access-Control-Allow-Origin", "*" },
         { "Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS" },
@@ -455,4 +497,42 @@ void server::listen()
     });
 
     m_webSrv->listen(m_bindAddress, m_listenPort);
+}
+
+void server::setCookie(httplib::Response &res, const std::string &name, const std::string &value, int maxAge, bool httpOnly)
+{
+    std::string cookie = name + "=" + value + "; Max-Age=" + std::to_string(maxAge);
+    if (httpOnly) 
+    {
+        cookie += "; HttpOnly";
+    }
+    res.set_header("Set-Cookie", cookie);
+}
+
+std::string server::getCookie(const httplib::Request &req, const std::string &name)
+{
+    std::string result;
+    if (req.has_header("Cookie")) 
+    {
+        std::string cookieHeader = req.get_header_value("Cookie");
+        std::istringstream cookieStream(cookieHeader);
+        std::string pair;
+        while (std::getline(cookieStream, pair, ';')) 
+        {
+            size_t pos = pair.find('=');
+            if (pos != std::string::npos) 
+            {
+                std::string key = pair.substr(0, pos);
+                std::string value = pair.substr(pos + 1);
+                key.erase(0, key.find_first_not_of(" "));
+                key.erase(key.find_last_not_of(" ") + 1);
+                if (key == name) 
+                {
+                    result = value;
+                    break;
+                }
+            }
+        }
+    }
+    return result;
 }

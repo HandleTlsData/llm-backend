@@ -1,4 +1,5 @@
 #include "common.hpp"
+#include <unordered_set>
 
 static json global_config = {};
 
@@ -135,6 +136,62 @@ std::string base64_encode(const std::vector<unsigned char> &data)
     }
 
     return encoded;
+}
+
+std::string get_mime_type(const std::string& filename) 
+{
+    static const std::map<std::string, std::string> mime_types = 
+    {
+        {".jpg", "image/jpeg"},
+        {".jpeg", "image/jpeg"},
+        {".png", "image/png"},
+        {".gif", "image/gif"},
+        {".bmp", "image/bmp"},
+        {".webp", "image/webp"},
+        {".svg", "image/svg+xml"}
+    };
+
+    std::string extension = std::filesystem::path(filename).extension().string();
+    auto it = mime_types.find(extension);
+    if (it != mime_types.end()) 
+    {
+        return it->second;
+    }
+    return "application/octet-stream";
+}
+
+std::string base64_imageFile(const std::string &base_dir, const std::string &filename)
+{
+    std::filesystem::path file_path = std::filesystem::path(base_dir) / filename;
+
+    LOG("Base64 filepath: {}", file_path.string());
+    
+    if (!std::filesystem::exists(file_path) || !std::filesystem::is_regular_file(file_path)) 
+    {
+        throw std::runtime_error("File does not exist: " + file_path.string());
+    }
+
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file) 
+    {
+        throw std::runtime_error("Cannot open file: " + file_path.string());
+    }
+
+    std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(file), {});
+    std::string base64_data = base64_encode(buffer);
+    
+    std::string mime_type = get_mime_type(filename);
+    
+    return "data:" + mime_type + ";base64," + base64_data;
+}
+
+std::string currentTime(const std::string &format)
+{
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, format.c_str());
+    return oss.str();
 }
 
 std::vector<std::string> split(const std::string& s, char delimiter) 

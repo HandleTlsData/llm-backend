@@ -93,158 +93,158 @@ namespace comfy_workflows
         }
     }
     )"_json;
-    nlohmann::json SD3Workflow = R"(
-    {
-        "client_id": "",
-        "prompt": {
-            "6": {
-                "inputs": {
-                "text": "",
-                "clip": [
-                    "273",
+nlohmann::json SD3Workflow = R"(
+{
+    "client_id": "1e316ee5e2894fbb896006ef822c894b",
+    "prompt": {
+        "6": {
+            "inputs": {
+            "text": "a female character with long, flowing hair",
+            "clip": [
+                "273",
+                0
+            ]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+        "13": {
+            "inputs": {
+            "shift": 3,
+            "model": [
+                "4",
+                0
+            ]
+            },
+            "class_type": "ModelSamplingSD3"
+        },
+        "67": {
+            "inputs": {
+            "conditioning": [
+                "7",
+                0
+            ]
+            },
+            "class_type": "ConditioningZeroOut"
+        },
+        "68": {
+            "inputs": {
+            "start": 0.1,
+            "end": 1,
+            "conditioning": [
+                "67",
+                0
+            ]
+            },
+            "class_type": "ConditioningSetTimestepRange"
+        },
+        "69": {
+            "inputs": {
+            "conditioning_1": [
+                "68",
+                0
+            ],
+            "conditioning_2": [
+                "70",
+                0
+            ]
+            },
+            "class_type": "ConditioningCombine"
+        },
+        "70": {
+            "inputs": {
+            "start": 0,
+            "end": 0.1,
+            "conditioning": [
+                "7",
+                0
+            ]
+            },
+            "class_type": "ConditioningSetTimestepRange"
+        },
+        "7": {
+            "inputs": {
+            "text": "",
+            "clip": [
+                "273",
+                0
+            ]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+        "135": {
+            "inputs": {
+            "width": 512,
+            "height": 512,
+            "batch_size": 1
+            },
+            "class_type": "EmptySD3LatentImage"
+        },
+        "231": {
+            "inputs": {
+            "samples": [
+                "271",
+                0
+            ],
+            "vae": [
+                "4",
+                2
+            ]
+            },
+            "class_type": "VAEDecode"
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "filename_prefix": "gen",
+                "images": [
+                    "231",
                     0
                 ]
-                },
-                "class_type": "CLIPTextEncode"
+            }
+        },
+        "4": {
+            "inputs": {
+            "ckpt_name": "sd3_medium.safetensors"
             },
-            "13": {
-                "inputs": {
-                "shift": 3,
-                "model": [
-                    "4",
-                    0
-                ]
-                },
-                "class_type": "ModelSamplingSD3"
+            "class_type": "CheckpointLoaderSimple"
+        },
+        "271": {
+            "inputs": {
+            "seed": 945512652412924,
+            "steps": 28,
+            "cfg": 7,
+            "sampler_name": "dpmpp_2m",
+            "scheduler": "sgm_uniform",
+            "denoise": 1,
+            "model": [
+                "13",
+                0
+            ],
+            "positive": [
+                "6",
+                0
+            ],
+            "negative": [
+                "69",
+                0
+            ],
+            "latent_image": [
+                "135",
+                0
+            ]
             },
-            "67": {
-                "inputs": {
-                "conditioning": [
-                    "7",
-                    0
-                ]
-                },
-                "class_type": "ConditioningZeroOut"
+            "class_type": "KSampler"
+        },
+        "273": {
+            "inputs": {
+            "clip_name1": "clip_g.safetensors",
+            "clip_name2": "clip_l.safetensors",
+            "type": "sd3"
             },
-            "68": {
-                "inputs": {
-                "start": 0.1,
-                "end": 1,
-                "conditioning": [
-                    "67",
-                    0
-                ]
-                },
-                "class_type": "ConditioningSetTimestepRange"
-            },
-            "69": {
-                "inputs": {
-                "conditioning_1": [
-                    "68",
-                    0
-                ],
-                "conditioning_2": [
-                    "70",
-                    0
-                ]
-                },
-                "class_type": "ConditioningCombine"
-            },
-            "70": {
-                "inputs": {
-                "start": 0,
-                "end": 0.1,
-                "conditioning": [
-                    "7",
-                    0
-                ]
-                },
-                "class_type": "ConditioningSetTimestepRange"
-            },
-            "7": {
-                "inputs": {
-                "text": "",
-                "clip": [
-                    "273",
-                    0
-                ]
-                },
-                "class_type": "CLIPTextEncode"
-            },
-            "135": {
-                "inputs": {
-                "width": 512,
-                "height": 512,
-                "batch_size": 1
-                },
-                "class_type": "EmptySD3LatentImage"
-            },
-            "231": {
-                "inputs": {
-                "samples": [
-                    "271",
-                    0
-                ],
-                "vae": [
-                    "4",
-                    2
-                ]
-                },
-                "class_type": "VAEDecode"
-            },
-            "9": {
-                "class_type": "SaveImage",
-                "inputs": {
-                    "filename_prefix": "gen",
-                    "images": [
-                        "231",
-                        0
-                    ]
-                }
-            },
-            "4": {
-                "inputs": {
-                "ckpt_name": ""
-                },
-                "class_type": "CheckpointLoaderSimple"
-            },
-            "271": {
-                "inputs": {
-                "seed": 945512652412924,
-                "steps": 28,
-                "cfg": 7,
-                "sampler_name": "dpmpp_2m",
-                "scheduler": "sgm_uniform",
-                "denoise": 1,
-                "model": [
-                    "13",
-                    0
-                ],
-                "positive": [
-                    "6",
-                    0
-                ],
-                "negative": [
-                    "69",
-                    0
-                ],
-                "latent_image": [
-                    "135",
-                    0
-                ]
-                },
-                "class_type": "KSampler"
-            },
-            "273": {
-                "inputs": {
-                "clip_name1": "clip_g.safetensors",
-                "clip_name2": "clip_l.safetensors",
-                "type": "sd3"
-                },
-                "class_type": "DualCLIPLoader"
-            }    
-        }
+            "class_type": "DualCLIPLoader"
+        }    
     }
-    )"_json;
+}
+)"_json;
 };
 

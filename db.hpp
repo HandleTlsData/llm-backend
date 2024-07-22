@@ -16,20 +16,29 @@ public:
     ~pgdb();
 
 public:
+    struct messageBody
+    {
+        std::string msg;
+        bool isLocal;
+        std::string imgUri;
+
+    };
+
     std::string hashPassword(const std::string& username, const std::string& password);
 
     bool createUser(const std::string& username, const std::string& pwd);
     pgdb::req_state usernameExists(const std::string& username);
 
-    bool auth(std::string& username, std::string& password);
-    bool auth(std::string& token);
-    int userIDFromToken(std::string& token);
+    bool auth(const std::string& username, const std::string& password);
+    bool auth(const std::string& token);
+    int userIDFromToken(const std::string& token);
+    std::string usernameFromToken(const std::string& token);
 
     void saveToken(const std::string& username, const std::string& token);
     int createChat(int user1Id, int user2Id);
-    void storeMessage(int chatId, int senderId, const std::string& message);
-    std::vector<std::string> retrieveMessages(int ownerId, int chatId);
+    void storeMessage(int chatId, int senderId, const std::string& message, const std::string& filename = "");
     std::vector<std::pair<std::string, bool>> getChatMessages(int chatId, int userId);
+    std::vector<messageBody> getChatMessagesWithImgs(int chatId, int userId);
     std::vector<int> getChatIdsForUser(int userId);
     std::string getFirstMessageOfChat(int chatId);
     void removeChatsForUser(int userId);

@@ -3,3 +3,4 @@ build.sh
 config.json
 .vscode/settings.json
 Dockerfile
+build/

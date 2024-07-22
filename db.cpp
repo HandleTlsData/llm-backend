@@ -49,21 +49,23 @@ std::string pgdb::hashPassword(const std::string &username, const std::string &p
 
 bool pgdb::createUser(const std::string &username, const std::string &pwd)
 {
+    std::string token = "uzbek";
+
+    // if()
+
+    if(this->usernameExists(username) != req_state::not_found)
+        return false;
+    
+
     try 
     {
-        if(this->usernameExists(username) != req_state::not_found)
-            return false;
-
         this->conn->prepare("create_user", R"(
             INSERT INTO "users" (username, password)
             VALUES ($1, $2)
         )");
 
-        // Calculate the salt using the first half of the username
-        std::string salt = username.substr(0, username.length() / 2);
-
         // Hash the password using the salt
-        std::string hashedPassword = hashPassword(pwd, salt);
+        std::string hashedPassword = hashPassword(username, pwd);
 
         pqxx::work txn(*this->conn);
         txn.exec_prepared("create_user", username, hashedPassword);
@@ -97,7 +99,7 @@ pgdb::req_state pgdb::usernameExists(const std::string &username)
     return req_state::error;
 }
 
-bool pgdb::auth(std::string &username, std::string &password)
+bool pgdb::auth(const std::string &username, const std::string &password)
 {
     try 
     {
@@ -117,11 +119,11 @@ bool pgdb::auth(std::string &username, std::string &password)
     }
 }
 
-bool pgdb::auth(std::string &token)
+bool pgdb::auth(const std::string &token)
 {
     try 
     {
-        pqxx::work txn(*this->conn);
+        pqxx::work txn(*conn);
 
         conn->prepare("check_token", "SELECT COUNT(*) FROM \"tokens\" WHERE token = $1");
         pqxx::result res = txn.exec_prepared("check_token", token);
@@ -135,11 +137,11 @@ bool pgdb::auth(std::string &token)
     }
 }
 
-int pgdb::userIDFromToken(std::string &token)
+int pgdb::userIDFromToken(const std::string &token)
 {
     try 
     {
-        pqxx::work txn(*this->conn);
+        pqxx::work txn(*conn);
 
         conn->prepare("userid_token", "SELECT user_id FROM \"tokens\" WHERE token = $1");
         pqxx::result res = txn.exec_prepared("userid_token", token);
@@ -150,6 +152,25 @@ int pgdb::userIDFromToken(std::string &token)
     {
         CATCHLOG(e.what());
         return -1;
+    }
+}
+
+std::string pgdb::usernameFromToken(const std::string &token)
+{
+    int userID = userIDFromToken(token);
+    try 
+    {
+        pqxx::work txn(*conn);
+
+        conn->prepare("username_token", "SELECT username FROM \"users\" WHERE id = $1");
+        pqxx::result res = txn.exec_prepared("username_token", userID);
+
+        return res[0][0].as<std::string>();
+    } 
+    catch (const std::exception& e) 
+    {
+        CATCHLOG(e.what());
+        return {};
     }
 }
 
@@ -198,13 +219,13 @@ int pgdb::createChat(int user1Id, int user2Id)
     }
 }
 
-void pgdb::storeMessage(int chatId, int senderId, const std::string &message)
+void pgdb::storeMessage(int chatId, int senderId, const std::string &message, const std::string& filename)
 {
     try 
     {
         pqxx::work txn(*conn);
-        conn->prepare("store_message", "INSERT INTO messages (chat_id, sender_id, message) VALUES ($1, $2, $3)");
-        txn.exec_prepared("store_message", chatId, senderId, message);
+        conn->prepare("store_message", "INSERT INTO messages (chat_id, sender_id, message, imgfile) VALUES ($1, $2, $3, $4)");
+        txn.exec_prepared("store_message", chatId, senderId, message, filename);
         txn.commit();
         LOG("Message stored successfully!");
     } 
@@ -212,26 +233,6 @@ void pgdb::storeMessage(int chatId, int senderId, const std::string &message)
     {
         CATCHLOG(e.what());
     }
-}
-
-std::vector<std::string> pgdb::retrieveMessages(int ownerId, int chatId)
-{
-    std::vector<std::string> messages = {};
-    try 
-    {
-        pqxx::work txn(*conn);
-        conn->prepare("retrieve_messages", "SELECT * FROM messages WHERE chat_id = $1 and sender_id = $2 ORDER BY timestamp");
-        pqxx::result res = txn.exec_prepared("retrieve_messages", chatId, ownerId);
-        for (const pqxx::row& row : res) 
-        {
-            messages.push_back(row[2].as<std::string>());
-        }
-    } 
-    catch (const std::exception& e) 
-    {
-        CATCHLOG(e.what());
-    }
-    return messages;
 }
 
 std::vector<std::pair<std::string, bool>> pgdb::getChatMessages(int chatId, int userId)
@@ -248,6 +249,30 @@ std::vector<std::pair<std::string, bool>> pgdb::getChatMessages(int chatId, int 
             int senderId = row[1].as<int>();
             bool isLocal = (senderId == userId);
             messages.emplace_back(message, isLocal);
+        }
+    } 
+    catch (const std::exception& e) 
+    {
+        CATCHLOG(e.what());
+    }
+    return messages;
+}
+
+std::vector<pgdb::messageBody> pgdb::getChatMessagesWithImgs(int chatId, int userId)
+{
+    std::vector<pgdb::messageBody> messages = {};
+    try 
+    {
+        pqxx::work txn(*conn);
+        conn->prepare("retrieve_messages", "SELECT message, sender_id, imgfile FROM messages WHERE chat_id = $1 ORDER BY timestamp");
+        pqxx::result res = txn.exec_prepared("retrieve_messages", chatId);
+        for (const pqxx::row& row : res) 
+        {
+            std::string message = row[0].as<std::string>();
+            int senderId = row[1].as<int>();
+            std::string img = row[2].as<std::string>();
+            bool isLocal = (senderId == userId);
+            messages.emplace_back(pgdb::messageBody{message, isLocal, img});
         }
     } 
     catch (const std::exception& e) 

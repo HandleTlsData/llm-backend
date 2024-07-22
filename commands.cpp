@@ -2,12 +2,12 @@
 #include "comfy_client.hpp"
 #include "config.hpp"
 
-void command_handler::registerCommand(const std::string &name,const std::string& description, std::function<std::string(const std::string &)> func)
+void command_handler::registerCommand(const std::string &name,const std::string& description, std::function<std::string(const std::string &)> func, bool postProcess)
 {
-    m_commands[name] = std::make_pair(description, func);
+    m_commands[name] = {description, postProcess, func};
 }
 
-std::string command_handler::executeCommand(const std::string &input)
+std::pair<std::string,std::string> command_handler::executeCommand(const std::string &input, bool& llmPostProcessing)
 {
     std::regex commandRegex("\\[(\\w+)\\](.*)\\[/\\1\\](.*)");
     std::smatch match;
@@ -21,7 +21,8 @@ std::string command_handler::executeCommand(const std::string &input)
         if (it != m_commands.end()) 
         {
             LOG("command_handler calling {}({})", it->first, args);
-            return it->second.second(args);
+            llmPostProcessing = it->second.llmPostProcessing;
+            return std::make_pair(it->first, it->second.fn(args));
         } 
         else 
         {
@@ -32,7 +33,7 @@ std::string command_handler::executeCommand(const std::string &input)
     {
         ERRLOG("Invalid command format");
     }
-    return std::string();
+    return {};
 }
 
 std::vector<std::pair<std::string, std::string>> command_handler::listCommands()
@@ -41,7 +42,7 @@ std::vector<std::pair<std::string, std::string>> command_handler::listCommands()
     
     for (const auto& [name, data] : m_commands) 
     {
-        commandsInfo.emplace_back(name, data.first); 
+        commandsInfo.emplace_back(name, data.description); 
     }
     
     return commandsInfo;
@@ -119,10 +120,6 @@ std::string helper_functions::getWeather(const std::string &city)
 
 std::string helper_functions::generateImage(const std::string &prompt)
 {
-    std::string formattedReturn = "Generating Image of " + prompt;
-
-    auto handler = std::make_unique<comfy_client>(g_config->getValue<std::string>("comfy.base_url"));
-    handler->processSingleTxt2Img(prompt, "");
-
-    return formattedReturn;
+    auto handler = std::make_unique<comfy_client>(g_config->getValue<std::string>("comfy.base_url"), g_config->getValue<std::string>("comfy.fs_location"));
+    return handler->processSingleTxt2Img(prompt);
 }

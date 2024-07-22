@@ -4,15 +4,23 @@
 #include <regex>
 #include <utility>
 
+struct command_body
+{
+    std::string description;
+    //with tools like getweather we can pass response back to the normal conversation for it to generate us proper reply
+    //with tools like imageGeneration we cannot pass it back to LLM, since the output is binary data
+    bool llmPostProcessing;
+    std::function<std::string(const std::string&)> fn;
+};
+
 class command_handler 
 {
 private:
-    //string - command name, pair<string - command description, function - command function to execute>
-    std::map<std::string, std::pair<std::string, std::function<std::string(const std::string&)>>> m_commands;
+    std::map<std::string, command_body> m_commands;
 
 public:
-    void registerCommand(const std::string& name, const std::string& description, std::function<std::string(const std::string&)> func);
-    std::string executeCommand(const std::string& input);
+    void registerCommand(const std::string& name, const std::string& description, std::function<std::string(const std::string&)> func, bool postProcess = true);
+    std::pair<std::string,std::string> executeCommand(const std::string& input, bool& llmPostProcessing);
 
     std::vector<std::pair<std::string, std::string>> listCommands();
 };

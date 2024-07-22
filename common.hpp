@@ -24,7 +24,9 @@ std::string hashString(const std::string& source);
 std::string generateString(int length);
 std::string urlEncode(const std::string& source);
 std::string base64_encode(const std::vector<unsigned char>& data);
+std::string base64_imageFile(const std::string& base_dir, const std::string& filename);
 
+std::string currentTime(const std::string &format);
 
 std::vector<std::string> split(const std::string& s, char delimiter);
 std::vector<std::string> split(const std::string& s, char delimiter, size_t minChunkSize);
