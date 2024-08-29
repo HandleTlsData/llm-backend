@@ -6,7 +6,6 @@
 
 int main()
 {
-
     LOG("Reading config");
     g_config->fromFile("config.json");
     
@@ -21,9 +20,13 @@ int main()
     }
     else
     {
-        g_cmd->registerCommand("GENIMG", "A tool that generates picture by given prompt (By calling image generation API)", 
+        g_cmd->registerCommand("GENIMG", "A tool that generates an image based on an image description", 
             helper_functions::generateImage, false);   
     }
+
+    g_cmd->registerCommand("GENAUDIO", "A tool that generates music (as an audio file) based on a description", 
+        helper_functions::generateMusic, false);    
+
 
     LOG("Starting backend");
     auto webserver = std::make_unique<server>(g_config->getValue<std::string>("server.bind_address"), g_config->getValue<int>("server.bind_port"));

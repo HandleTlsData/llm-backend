@@ -24,7 +24,7 @@ public:
 
     };
 
-    std::string hashPassword(const std::string& username, const std::string& password);
+    static std::string hashPassword(const std::string& username, const std::string& password);
 
     bool createUser(const std::string& username, const std::string& pwd);
     pgdb::req_state usernameExists(const std::string& username);

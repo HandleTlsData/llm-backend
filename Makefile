@@ -5,15 +5,15 @@ SRC_DIR := .
 OBJ_DIR := build/obj
 BIN_DIR := build/
 
-SRCS := common.cpp main.cpp ollama_client.cpp comfy_client.cpp commands.cpp server.cpp db.cpp ai_client.cpp rag.cpp vecdb.cpp config.cpp imagesrv.cpp 
+SRCS := common.cpp main.cpp ai_client.cpp ollama_client.cpp comfy_client.cpp musicgen_client.cpp py_handler.cpp commands.cpp server.cpp db.cpp rag.cpp vecdb.cpp config.cpp imagesrv.cpp 
 OBJS := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 
 # Final executable name
 TARGET := $(BIN_DIR)/llmback
 
 
-INCLUDES := -I spdlog/include/ -I cpp-httplib/ -I json/include/
-LIBS := -lcurl -lssl -lcrypto -lpqxx -lpq 
+INCLUDES := -I spdlog/include/ -I cpp-httplib/ -I json/include/ -I /usr/include/python3.10/
+LIBS := -lcurl -lssl -lcrypto -lpqxx -lpq -lpython3.10
 
 # Phony targets
 .PHONY: all clean

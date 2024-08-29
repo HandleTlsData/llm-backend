@@ -22,7 +22,7 @@ bool imagesrv::isAuthorized(const httplib::Request &req)
 
 bool imagesrv::isAllowedExtension(const std::string &filename)
 {
-    static const std::unordered_set<std::string> allowed_extensions = {".jpg", ".jpeg", ".png", ".gif"};
+    static const std::unordered_set<std::string> allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".wav"};
     std::string extension = std::filesystem::path(filename).extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
     return allowed_extensions.find(extension) != allowed_extensions.end();

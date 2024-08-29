@@ -33,4 +33,5 @@ namespace helper_functions
     std::string getWeather(const std::string& city);
 
     std::string generateImage(const std::string& prompt);
+    std::string generateMusic(const std::string& prompt);
 };

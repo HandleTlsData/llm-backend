@@ -217,6 +217,7 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
             else
             {
                 LOG("processing regular request");
+                // disabled for now... LLMs are not good with command processing...
                 auto incomingCommand = chatHandler->processMessageWithCommandHandler(incomingMessage);
                 LOG("command: {}", incomingCommand);
                 bool llmPostProcessing = false;
@@ -231,10 +232,13 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
                     }
                     else
                     {
-                        if(commandResponse.first == "GENIMG")
+                        if(commandResponse.first == "GENIMG" || commandResponse.first == "GENAUDIO")
                         {
                             auto username = db->usernameFromToken(token);
-                            std::string generatedFilename = hashString( generateString(6) + currentTime("%d-%m-%Y %H-%M-%S") ) + ".png";
+                            std::string destinationExt = ".png";
+                            if(commandResponse.first == "GENAUDIO")
+                                destinationExt = ".wav";
+                            std::string generatedFilename = hashString( generateString(6) + currentTime("%d-%m-%Y %H-%M-%S") ) + destinationExt;
                             std::string destinationPath = g_config->getValue<std::string>("comfy.fs_location") + "output/" + username + "/" + generatedFilename;
                             std::string sourcePath = commandResponse.second;
                             try 
@@ -264,6 +268,8 @@ void server::handleChatMessage(const httplib::Request &req, httplib::Response &r
                 {
                     response = chatHandler->processChatMessage(incomingMessage, chatHistory);
                 }
+
+                // response = chatHandler->processChatMessage(incomingMessage, chatHistory);
             }
 
 

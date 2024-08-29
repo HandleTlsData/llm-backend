@@ -22,7 +22,7 @@ ollama_client::ollama_client(const std::string &backendUrl, const std::string &i
 {
     this->accessed();
     this->backURL = backendUrl;
-    this->model = "llama3:latest";
+    this->model = "llama3.1:latest";
     this->backURL_img = imageBackendURL;
     this->backURL_emb = embedBackendURL;
 }
@@ -222,26 +222,67 @@ std::string ollama_client::processMessageWithCommandHandler(const std::string &r
 
         for(const auto& x : g_cmd->listCommands())
         {
-            systemMsg += "\"[" + x.first + "]argument[/" + x.first + "]\" " + x.second + ";";
+            systemMsg += "\"[" + x.first + "]extracted argument[/" + x.first + "]\" " + x.second + ";";
         }
 
-        systemMsg += "You're not a chat assistant, you're text-to-command translator. You need to transform text prompts into commands. Command is a tool's text format." 
-        "Only use the provided tools when the prompt explicitly requests information that the tool can provide, respond only with the relevant tool format (for example [TOOL]argument[/TOOL]). "
-        "Do not use tools for general mentions or discussions related to the tool's topic. Do not respond to prompts that don't require the use of these tools.";
+        systemMsg += "Your task is to transform given text into commands if it fits the functionality of the tools. All the tools have at least one incoming argument. " 
+        "For the text given to you, you need to extract the argument and form a command. Some given texts cannot be transformed into commands - respond with \"Undefined\" on them instead. "
+        "Transform text into commands only on direct orders to do something in given text, otherwise respond with \"Undefined\". "
+        "Always respond with \"Undefined\" to given text that don't require the use of the tools and if you haven't found the right tool "
+        "or if you are not completely sure that the tools are suitable for given text. "
+        "For example, if you don't have a tool for measuring the distance between cities, don't try to solve it using similar tools and just respond with \"Undefined\".";
         
         message["content"] = systemMsg;
         message["role"] = "system";
         requestBody["messages"].push_back(message);
     }
 
+    //give it some examples
+    std::vector<std::pair<std::string, std::string>> toolsUsageExamples = 
+    {
+        {"Given text: whats the weather in berlin?", "[GETWEATHER]Berlin[/GETWEATHER]"},
+        {"Given text: Generate me a picture of good weather in berlin", "[GENIMG]good weather in berlin[/GENIMG]"},
+        {"Given text: What's the weather like in Miami today?", "[GETWEATHER]Miami[/GETWEATHER]"},
+        {"Given text: generate me image of los angeles", "[GENIMG]los angeles[/GENIMG]"},
+        {"Given text: generate me image of cute dog", "[GENIMG]cute dog[/GENIMG]"},
+        {"Given text: generate a picture of a powerful car", "[GENIMG]powerful car[/GENIMG]"},
+        {"Given text: generate me a poem", "Undefined"},
+        {"Given text: generate me a story about two pets", "Undefined"},
+        {"Given text: write me a 2000 word story", "Undefined"},
+        {"Given text: Tell me about the weather in different seasons in the city of Berlin", "Undefined"},
+        {"Given text: Generate me hello world in C++", "Undefined"},
+        {"Given text: Write me md5 hashing function in python", "Undefined"},
+        {"Given text: can we do encryption with javascript?", "Undefined"},
+        {"Given text: Do you think 6*6 can be solved with get weather tool?", "Undefined"},
+        {"Given text: Can this be solved with python?", "Undefined"},
+        {"Given text: image los angeles", "Undefined"}
+    };
+
+    for(const auto& example : toolsUsageExamples)
+    {
+        {
+            nlohmann::json message;
+            message["content"] = example.first;
+            message["role"] = "user";
+            requestBody["messages"].push_back(message);
+        }
+
+        {
+            nlohmann::json message;
+            message["content"] = example.second;
+            message["role"] = "assistant";
+            requestBody["messages"].push_back(message);
+        }
+    }
+
     {
         nlohmann::json message;
-        message["content"] = requestMsg;
+        message["content"] = "Given text: " + requestMsg;
         message["role"] = "user";
         requestBody["messages"].push_back(message);
     }
 
-        std::string targetURL = backURL + CHAT_COMPLETION_URI;
+    std::string targetURL = backURL + CHAT_COMPLETION_URI;
     
     //no streaming logic, full response returned in a single blocking request
     std::string responseEncoded = makeHttpRequest(targetURL, requestBody, CHAT_COMPLETION_METHOD);

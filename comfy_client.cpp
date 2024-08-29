@@ -1,3 +1,5 @@
+#include "ai_client.hpp"
+
 #include "comfy_client.hpp"
 #include "comfy_worklows.hpp"
 

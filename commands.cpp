@@ -1,5 +1,6 @@
 #include "commands.hpp"
 #include "comfy_client.hpp"
+#include "musicgen_client.hpp"
 #include "config.hpp"
 
 void command_handler::registerCommand(const std::string &name,const std::string& description, std::function<std::string(const std::string &)> func, bool postProcess)
@@ -122,4 +123,10 @@ std::string helper_functions::generateImage(const std::string &prompt)
 {
     auto handler = std::make_unique<comfy_client>(g_config->getValue<std::string>("comfy.base_url"), g_config->getValue<std::string>("comfy.fs_location"));
     return handler->processSingleTxt2Img(prompt);
+}
+
+std::string helper_functions::generateMusic(const std::string &prompt)
+{
+    auto handler = std::make_unique<musicgen_client>();
+    return handler->processSingleTxtToAudio(prompt, 12);
 }
