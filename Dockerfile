@@ -1,6 +1,6 @@
 FROM debian:latest AS build
 
-RUN apt-get update && apt-get install -y curl libcurl4-gnutls-dev libpqxx-dev cmake make gcc g++ libssl-dev libsasl2-dev
+RUN apt-get update && apt-get install -y python3-dev curl libcurl4-gnutls-dev libpqxx-dev cmake make gcc g++ libssl-dev libsasl2-dev
 COPY . /app
 WORKDIR /app
 RUN make clean; make -j 4

@@ -11,9 +11,10 @@ OBJS := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 # Final executable name
 TARGET := $(BIN_DIR)/llmback
 
+PY_INCLUDE  := $(shell python3.11-config --includes)
 
-INCLUDES := -I spdlog/include/ -I cpp-httplib/ -I json/include/ -I /usr/include/python3.10/
-LIBS := -lcurl -lssl -lcrypto -lpqxx -lpq -lpython3.10
+INCLUDES := -I spdlog/include/ -I cpp-httplib/ -I json/include/ $(PY_INCLUDE)
+LIBS := -lcurl -lssl -lcrypto -lpqxx -lpq -lpython3.11
 
 # Phony targets
 .PHONY: all clean
