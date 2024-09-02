@@ -7,7 +7,7 @@ RUN make clean; make -j 4
 
 FROM debian:latest
 
-RUN apt-get update && apt-get install -y libcurl4-gnutls-dev libpqxx-dev libssl-dev libsasl2-dev
+RUN apt-get update && apt-get install -y python3-dev libcurl4-gnutls-dev libpqxx-dev libssl-dev libsasl2-dev
 
 COPY --from=build /app/build/llmback /app/llmback
 
